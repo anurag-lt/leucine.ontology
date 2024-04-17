@@ -11,185 +11,179 @@ import java.util.List;
 public class RelationInstancesDAO {
 
 	
-	/*/ Creates a new relation instance in the database.
-	@param timestamp The exact time when the relation instance was created.
-	@param status The current status of the relation instance.
-	@param description A textual description of the relationship instance.
-	@param fkRelationTypeId Foreign key identifier for the relationship type.
-	@param fkSourceObjectId Foreign key identifier for the source object.
-	@param fkTargetObjectId Foreign key identifier for the target object.
-	@return The newly created relation instance or null if creation fails. */
-	public RelationInstances createRelationInstance(Timestamp timestamp, RelationInstances.ObjectTypeEnum status, String description, int fkRelationTypeId, int fkSourceObjectId, int fkTargetObjectId) {
-	    Connection connection = DatabaseUtility.connect();
-	    PreparedStatement pstmt = null;
-	    ResultSet rs = null;
-	    String insertSQL = "INSERT INTO relation_instances(timestamp, status, description, fk_relation_type_id, fk_source_object_id, fk_target_object_id) VALUES(?,?,?,?,?,?) RETURNING id";
-	    try {
-	        pstmt = connection.prepareStatement(insertSQL);
-	        pstmt.setTimestamp(1, timestamp);
-	        pstmt.setString(2, status.name());
-	        pstmt.setString(3, description);
-	        pstmt.setInt(4, fkRelationTypeId);
-	        pstmt.setInt(5, fkSourceObjectId);
-	        pstmt.setInt(6, fkTargetObjectId);
-	        rs = pstmt.executeQuery();
-	        if (rs.next()) {
-	            RelationInstances newInstance = new RelationInstances();
-	            newInstance.setId(rs.getInt("id"));
-	            newInstance.setTimestamp(timestamp);
-	            newInstance.setStatus(status);
-	            newInstance.setDescription(description);
-	            newInstance.setFkRelationTypeID(new RelationTypes(fkRelationTypeId)); // Assuming RelationTypes object initialization
-	            newInstance.setFkSourceObjectID(new ObjectTypes(fkSourceObjectId)); // Assuming ObjectTypes object initialization
-	            newInstance.setFkTargetObjectID(new ObjectTypes(fkTargetObjectId)); // Assuming ObjectTypes object initialization
-	            return newInstance;
-	        }
-	    } catch (SQLException e) {
-	        Logger.getLogger(getClass().getName()).log(Level.SEVERE, "Error creating relation instance", e);
-	    } finally {
-	        DatabaseUtility.disconnect(connection);
-	        try {
-	            if (pstmt != null) pstmt.close();
-	            if (rs != null) rs.close();
-	        } catch (SQLException e) {
-	            Logger.getLogger(getClass().getName()).log(Level.SEVERE, "Error closing resources", e);
-	        }
+	/**
+	 * Creates a new relation instance in the database.
+	 * @param timestamp The exact time when the relation instance is created or modified.
+	 * @param status The current status of the relation instance.
+	 * @param description A textual description of the relationship instance.
+	 * @param fkRelationTypeID The type of relationship this instance represents.
+	 * @param fkSourceObjectID Specifies the source object involved in the relationship.
+	 * @param fkTargetObjectID Defines the target object of the relationship.
+	 * @return The id of the newly created relation instance or -1 if the operation fails.
+	 */
+	public int createRelationInstance(Timestamp timestamp, RelationInstances.ObjectTypeEnum status, String description, RelationTypes fkRelationTypeID, ObjectTypes fkSourceObjectID, ObjectTypes fkTargetObjectID) {
+	  Connection connection = null;
+	  PreparedStatement preparedStatement = null;
+	  int generatedId = -1;
+	  try {
+	    connection = DatabaseUtility.connect();
+	    String sql = "INSERT INTO relation_instances (timestamp, status, description, fk_relation_type_id, fk_source_object_id, fk_target_object_id) VALUES (?, ?, ?, ?, ?, ?)";
+	    preparedStatement = connection.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS);
+	    preparedStatement.setTimestamp(1, timestamp);
+	    preparedStatement.setString(2, status.name());
+	    preparedStatement.setString(3, description);
+	    preparedStatement.setInt(4, fkRelationTypeID.getId());
+	    preparedStatement.setInt(5, fkSourceObjectID.getId());
+	    preparedStatement.setInt(6, fkTargetObjectID.getId());
+	    preparedStatement.executeUpdate();
+	    ResultSet rs = preparedStatement.getGeneratedKeys();
+	    if (rs.next()) {
+	      generatedId = rs.getInt(1);
 	    }
-	    return null;
+	  } catch (SQLException e) {
+	    Logger.getLogger(getClass().getName()).log(Level.SEVERE, "Error creating relation instance", e);
+	  } finally {
+	    DatabaseUtility.disconnect(connection);
+	    if (preparedStatement != null) {
+	      try {
+	        preparedStatement.close();
+	      } catch (SQLException e) {
+	        Logger.getLogger(getClass().getName()).log(Level.SEVERE, "Error closing PreparedStatement", e);
+	      }
+	    }
+	  }
+	  return generatedId;
 	}
 	
 	/**
-	 * Utilized in the 'Relation Type Overview' section to display all instances of a specified relationship type, aiding in comprehensive overview and management.
-	 * @param relationTypeId The unique identifier of the relation type for which instances are being fetched.
-	 * @return A list of RelationInstances corresponding to the specified relation type.
+	 * Retrieves relation instances for a specific relation type.
+	 * It's used in the 'Relation Type Overview' page for managing instances associated with each relation type.
+	 *
+	 * @param relationTypeId The unique identifier of the relation type to fetch instances for.
+	 * @return List<RelationInstances> A list of RelationInstances.
 	 */
-	public List<RelationInstances> findAllRelationInstancesByTypeId(String relationTypeId) {
-	    List<RelationInstances> instances = new ArrayList<>();
-	    String query = "SELECT * FROM relation_instances WHERE fk_relation_type_id = ?;";
-	    try (Connection connection = DatabaseUtility.connect();
-	         PreparedStatement pstmt = connection.prepareStatement(query)) {
-	        pstmt.setString(1, relationTypeId);
+	public List<RelationInstances> fetchRelationInstancesByTypeId(String relationTypeId) {
+	    List<RelationInstances> relationInstancesList = new ArrayList<>();
+	    Connection connection = DatabaseUtility.connect();
+	    try {
+	        String sql = "SELECT * FROM relation_instances WHERE fk_relation_type_id = ?";
+	        PreparedStatement preparedStatement = connection.prepareStatement(sql);
+	        preparedStatement.setString(1, relationTypeId);
 	
-	        try (ResultSet rs = pstmt.executeQuery()) {
-	            while (rs.next()) {
-	                RelationInstances instance = new RelationInstances();
-	                instance.setId(rs.getInt("id"));
-	                instance.setTimestamp(rs.getTimestamp("timestamp"));
-	                instance.setStatus(RelationInstances.ObjectTypeEnum.valueOf(rs.getString("status")));
-	                instance.setDescription(rs.getString("description"));
-	                instance.setFkRelationTypeID(new RelationTypes(rs.getInt("fk_relation_type_id")));
-	                instance.setFkSourceObjectID(new ObjectTypes(rs.getInt("fk_source_object_id")));
-	                instance.setFkTargetObjectID(new ObjectTypes(rs.getInt("fk_target_object_id")));
-	                instances.add(instance);
-	            }
+	        ResultSet resultSet = preparedStatement.executeQuery();
+	
+	        while (resultSet.next()) {
+	            RelationInstances relationInstance = new RelationInstances();
+	            relationInstance.setId(resultSet.getInt("id"));
+	            relationInstance.setTimestamp(resultSet.getTimestamp("timestamp"));
+	            relationInstance.setStatus(RelationInstances.ObjectTypeEnum.valueOf(resultSet.getString("status")));
+	            relationInstance.setDescription(resultSet.getString("description"));
+	            // Assuming setters for setting FK objects just from IDs, you might need to fetch the full objects based on these IDs
+	            relationInstance.setFkRelationTypeID(new RelationTypes()); // Set relation type
+	            relationInstance.getFkRelationTypeID().setId(resultSet.getInt("fk_relation_type_id"));
+	            relationInstance.setFkSourceObjectID(new ObjectTypes()); // Set source object type
+	            relationInstance.getFkSourceObjectID().setId(resultSet.getInt("fk_source_object_id"));
+	            relationInstance.setFkTargetObjectID(new ObjectTypes()); // Set target object type
+	            relationInstance.getFkTargetObjectID().setId(resultSet.getInt("fk_target_object_id"));
+	            relationInstancesList.add(relationInstance);
 	        }
 	    } catch (SQLException e) {
 	        Logger.getLogger(this.getClass().getName()).log(Level.SEVERE, null, e);
 	    } finally {
 	        DatabaseUtility.disconnect(connection);
 	    }
-	    return instances;
-	}
 	
-	/*
-	 Deletes a specific relation instance identified by the instanceId from the relation_instances table.
-	 @param instanceId The unique identifier of the relation instance to be deleted.
-	*/
-	public boolean deleteRelationInstanceById(String instanceId) {
-	    Connection connection = null;
-	    PreparedStatement preparedStatement = null;
-	    boolean isDeleted = false;
-	    String sql = "DELETE FROM relation_instances WHERE id = ?;";
-	    try {
-	        connection = DatabaseUtility.connect();
-	        preparedStatement = connection.prepareStatement(sql);
-	        preparedStatement.setString(1, instanceId);
-	
-	        int rowsAffected = preparedStatement.executeUpdate();
-	        if (rowsAffected > 0) {
-	            isDeleted = true;
-	        }
-	    } catch (SQLException e) {
-	        Logger.getLogger(getClass().getName()).log(Level.SEVERE, "Error deleting relation instance by ID", e);
-	    } finally {
-	        DatabaseUtility.disconnect(connection);
-	        try {
-	            if (preparedStatement != null) {
-	                preparedStatement.close();
-	            }
-	        } catch (SQLException e) {
-	            Logger.getLogger(getClass().getName()).log(Level.SEVERE, "Error closing PreparedStatement", e);
-	        }
-	    }
-	    return isDeleted;
+	    return relationInstancesList;
 	}
 	
 	
 	/**
-	 * Fetches details of a specific relation instance by its unique identifier.
-	 * Used in the 'Relation Type Overview' section for data transparency and auditability.
-	 *
-	 * @param instanceId The unique identifier of the relation instance.
-	 * @return A RelationInstances object containing details of the specified relation instance.
+	 * Deletes a specific relation instance identified by its ID. Supports data management operations in the 'Relation Type Overview' section.
+	 * @param instanceId The unique identifier of the instance to be deleted.
+	 * @return boolean indicating the success of the deletion operation.
+	 */
+	public boolean deleteRelationInstanceById(String instanceId) {
+	    Connection connection = DatabaseUtility.connect();
+	    String sql = "DELETE FROM relation_instances WHERE id = ?;";
+	    try (PreparedStatement preparedStatement = connection.prepareStatement(sql)) {
+	        preparedStatement.setString(1, instanceId);
+	        int rowsAffected = preparedStatement.executeUpdate();
+	        return rowsAffected > 0;
+	    } catch (SQLException e) {
+	        Logger.getLogger(this.getClass().getName()).log(Level.SEVERE, null, e);
+	        return false;
+	    } finally {
+	        DatabaseUtility.disconnect(connection);
+	    }
+	}
+	
+	/**
+	 * Retrieves detailed information for a specific relation instance.
+	 * @param instanceId The unique identifier of the relation instance to retrieve detailed information for.
+	 * @return RelationInstances The detailed information of the specified relation instance, or null if not found.
 	 */
 	public RelationInstances findRelationInstanceById(String instanceId) {
-	    Connection connection = DatabaseUtility.connect();
+	    Connection connection = null;
+	    PreparedStatement preparedStatement = null;
+	    ResultSet resultSet = null;
 	    RelationInstances relationInstance = null;
 	    try {
-	        PreparedStatement pstmt = connection.prepareStatement("SELECT * FROM relation_instances WHERE id = ?");
-	        pstmt.setInt(1, Integer.parseInt(instanceId));
-	        ResultSet rs = pstmt.executeQuery();
-	        if (rs.next()) {
+	        connection = DatabaseUtility.connect();
+	        String query = "SELECT * FROM relation_instances WHERE id = ?;";
+	        preparedStatement = connection.prepareStatement(query);
+	        preparedStatement.setInt(1, Integer.parseInt(instanceId));
+	        resultSet = preparedStatement.executeQuery();
+	        if (resultSet.next()) {
 	            relationInstance = new RelationInstances();
-	            relationInstance.setId(rs.getInt("id"));
-	            relationInstance.setTimestamp(rs.getTimestamp("timestamp"));
-	            relationInstance.setStatus(RelationInstances.ObjectTypeEnum.valueOf(rs.getString("status")));
-	            relationInstance.setDescription(rs.getString("description"));
-	            // Assuming the setting of fkRelationTypeID, fkSourceObjectID, and fkTargetObjectID is through their respective IDs
-	            relationInstance.setFkRelationTypeID(new RelationTypes(rs.getInt("fk_relation_type_id")));
-	            relationInstance.setFkSourceObjectID(new ObjectTypes(rs.getInt("fk_source_object_id")));
-	            relationInstance.setFkTargetObjectID(new ObjectTypes(rs.getInt("fk_target_object_id")));
+	            relationInstance.setId(resultSet.getInt("id"));
+	            relationInstance.setTimestamp(resultSet.getTimestamp("timestamp"));
+	            // Setting ENUM based on the string value from DB
+	            relationInstance.setStatus(RelationInstances.ObjectTypeEnum.valueOf(resultSet.getString("status")));
+	            relationInstance.setDescription(resultSet.getString("description"));
+	            // Assuming setFkRelationTypeID, setFkSourceObjectID, setFkTargetObjectID would
+	            // internally handle object initialization from ID, else additional queries needed.
 	        }
-	    } catch (SQLException e) {
-	        Logger.getLogger(getClass().getName()).log(Level.SEVERE, "Error retrieving relation instance by ID: " + instanceId, e);
+	    } catch (Exception e) {
+	        Logger.getLogger(this.getClass().getName()).log(Level.SEVERE, "Error fetching relation instance by ID", e);
 	    } finally {
 	        DatabaseUtility.disconnect(connection);
 	    }
 	    return relationInstance;
 	}
 	
-	/**
-	 * Updates an existing relation instance in the database with new information.
-	 * @param id The unique identifier of the relation instance to update.
-	 * @param timestamp New timestamp reflecting the update time of the relation instance.
-	 * @param status Updated status of the relation instance.
-	 * @param description Updated textual description of the relation instance.
-	 * @param fkRelationTypeId Updated foreign key linking to the relationship type.
-	 * @param fkSourceObjectId Updated foreign key specifying the source object.
-	 * @param fkTargetObjectId Updated foreign key defining the target object.
-	 * @return boolean indicating if the update was successful.
-	 */
-	public boolean updateRelationInstance(int id, Timestamp timestamp, ObjectTypeEnum status, String description, int fkRelationTypeId, int fkSourceObjectId, int fkTargetObjectId) {
-	    Connection connection = DatabaseUtility.connect();
-	    try {
-	        String query = "UPDATE relation_instances SET timestamp = ?, status = ?, description = ?, fk_relation_type_id = ?, fk_source_object_id = ?, fk_target_object_id = ? WHERE id = ?;";
-	        PreparedStatement pstmt = connection.prepareStatement(query);
-	        pstmt.setTimestamp(1, timestamp);
-	        pstmt.setString(2, status.toString());
-	        pstmt.setString(3, description);
-	        pstmt.setInt(4, fkRelationTypeId);
-	        pstmt.setInt(5, fkSourceObjectId);
-	        pstmt.setInt(6, fkTargetObjectId);
-	        pstmt.setInt(7, id);
 	
+	/**
+	 * Updates source and target objects of a relation instance.
+	 * @param instanceId The unique identifier of the relation instance to update.
+	 * @param newSourceObjectId The updated identifier for the source object involved in the relationship.
+	 * @param newTargetObjectId The updated identifier for the target object of the relationship.
+	 * @return boolean indicating the success of the update operation.
+	 */
+	public boolean updateRelationInstance(String instanceId, String newSourceObjectId, String newTargetObjectId) {
+	    Connection connection = null;
+	    PreparedStatement pstmt = null;
+	    boolean isSuccess = false;
+	    String updateQuery = "UPDATE relation_instances SET fk_source_object_id = ?, fk_target_object_id = ? WHERE id = ?";
+	    try {
+	        connection = DatabaseUtility.connect();
+	        pstmt = connection.prepareStatement(updateQuery);
+	        pstmt.setInt(1, Integer.parseInt(newSourceObjectId));
+	        pstmt.setInt(2, Integer.parseInt(newTargetObjectId));
+	        pstmt.setInt(3, Integer.parseInt(instanceId));
 	        int affectedRows = pstmt.executeUpdate();
-	        DatabaseUtility.disconnect(connection);
-	        return affectedRows > 0;
+	        if (affectedRows > 0) {
+	            isSuccess = true;
+	        }
 	    } catch (SQLException e) {
-	        Logger.getLogger(getClass().getName()).log(Level.SEVERE, "Error updating relation instance: ", e);
-	        return false;
+	        Logger.getLogger(this.getClass().getName()).log(Level.SEVERE, "Error updating relation instance", e);
 	    } finally {
 	        DatabaseUtility.disconnect(connection);
+	        try {
+	            if (pstmt != null) pstmt.close();
+	        } catch (SQLException e) {
+	            Logger.getLogger(this.getClass().getName()).log(Level.SEVERE, "Error closing PreparedStatement", e);
+	        }
 	    }
+	    return isSuccess;
 	}
 }
